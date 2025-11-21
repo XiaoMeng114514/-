@@ -9,6 +9,7 @@
 ![Dev](https://img.shields.io/badge/Developer-CN%E6%B1%9F%E5%8D%97-blue.svg)
 
 ## ✨ 核心特性
+（游戏仅占用27.7KB空间）
 
 ### 🎮 深度游戏机制
 * **泰坦降临**：随机刷新巨大的 AI 机器人，带来 Boss 战般的压迫感。
@@ -55,4 +56,4 @@
 
 **CN江南** 致力于创造有趣、流畅且富有细节的 Web 交互体验。本项目展示了原生 JS 在游戏开发领域的强大潜力。
 
-*Copyright © 2023 CN江南. All Rights Reserved.*
+*Copyright © 2025 CN江南. All Rights Reserved.*
