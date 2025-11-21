@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>宇宙霸主：球球大作战</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0b0b0b; font-family: "Microsoft YaHei", Arial, sans-serif; user-select: none; -webkit-user-select: none; }
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; justify-content: center; align-items: center; }
+        #main-menu { background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(10px); padding: 40px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 0 50px rgba(0, 168, 255, 0.2); text-align: center; pointer-events: auto; display: flex; flex-direction: column; gap: 20px; min-width: 300px; transition: opacity 0.3s; position: relative; }
+        h1 { color: #fff; margin: 0 0 5px 0; font-size: 36px; text-shadow: 0 0 15px #00a8ff; cursor: pointer; transition: transform 0.1s; }
+        h1:active { transform: scale(0.95); }
+        .dev-sign { color: #888; font-size: 12px; margin-top: -10px; letter-spacing: 1px; }
+        input[type="text"] { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 12px; border-radius: 8px; font-size: 18px; text-align: center; outline: none; }
+        input[type="text"]:focus { border-color: #00a8ff; background: rgba(255,255,255,0.15); }
+        .color-picker { display: flex; justify-content: center; gap: 10px; margin: 10px 0; }
+        .color-dot { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s; }
+        .color-dot.active { border-color: #fff; transform: scale(1.2); box-shadow: 0 0 10px currentColor; }
+        .settings-row { display: flex; justify-content: center; gap: 20px; color: #ccc; font-size: 14px; }
+        .toggle { cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        .btn { background: linear-gradient(45deg, #00a8ff, #00b894); border: none; color: white; padding: 15px 30px; border-radius: 50px; font-size: 20px; font-weight: bold; cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; text-transform: uppercase; }
+        .btn:active { transform: scale(0.95); }
+        .btn:hover { box-shadow: 0 0 20px rgba(0, 168, 255, 0.5); }
+        .hidden { opacity: 0; pointer-events: none !important; }
+        #pause-btn { position: absolute; top: 20px; right: 20px; z-index: 20; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.3); width: 40px; height: 40px; border-radius: 50%; font-size: 20px; display: none; justify-content: center; align-items: center; cursor: pointer; pointer-events: auto; }
+        #pause-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 15; display: none; justify-content: center; align-items: center; color: white; font-size: 40px; font-weight: bold; pointer-events: none; }
+        #toast { position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%); background: rgba(255, 215, 0, 0.9); color: black; padding: 10px 20px; border-radius: 20px; font-weight: bold; opacity: 0; transition: opacity 0.5s; pointer-events: none; z-index: 50; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui-layer">
+        <div id="main-menu">
+            <h1 id="gameTitle" onclick="titleEgg()">🌌 宇宙霸主</h1>
+            <div class="dev-sign">Developer: CN江南</div>
+            <input type="text" id="nickname" placeholder="输入名字有彩蛋..." maxlength="10" value="Player 1" style="margin-top:10px;">
+            <div class="color-picker" id="colorContainer"></div>
+            <div class="settings-row">
+                <label class="toggle"><input type="checkbox" id="soundToggle" checked> 音效</label>
+                <label class="toggle"><input type="checkbox" id="particleToggle" checked> 高画质</label>
+            </div>
+            <button class="btn" onclick="startGame()">开始征途</button>
+        </div>
+        <div id="pause-overlay">已 暂 停</div>
+        <div id="toast"></div>
+    </div>
+    <div id="pause-btn" onclick="togglePause()">⏸</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiElements = {
+            menu: document.getElementById('main-menu'),
+            pauseBtn: document.getElementById('pause-btn'),
+            pauseOverlay: document.getElementById('pause-overlay'),
+            nameInput: document.getElementById('nickname'),
+            soundToggle: document.getElementById('soundToggle'),
+            particleToggle: document.getElementById('particleToggle'),
+            title: document.getElementById('gameTitle'),
+            toast: document.getElementById('toast'),
+            colors: document.getElementById('colorContainer')
+        };
+
+        const CONSTANTS = {
+            WORLD_W: 10000,
+            WORLD_H: 10000,
+            FOOD_NUM: 1500,
+            BOT_NUM: 80,
+            WIN_SIZE: 5000
+        };
+
+        let state = {
+            foods: [], bots: [], particles: [], dying: [],
+            player: { x: 0, y: 0, r: 30, renderR: 30, color: '#00a8ff', name: 'Player 1' },
+            camera: { x: 0, y: 0 },
+            input: { x: 0, y: 0 },
+            gameStatus: 'INTRO',
+            audioOn: true, highQuality: true,
+            deathMsg: '', time: 0,
+            clicks: 0, godMode: false,
+            modes: { rainbow: false, ghost: false, flash: false, watermark: false },
+            colors: ['#ff7675', '#74b9ff', '#55efc4', '#a29bfe', '#fd79a8', '#ffeaa7'],
+            selectedColor: '#74b9ff',
+            activeBtns: []
+        };
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function initColors() {
+            state.colors.forEach(c => {
+                const d = document.createElement('div');
+                d.className = 'color-dot';
+                d.style.backgroundColor = c;
+                if (c === state.selectedColor) d.classList.add('active');
+                d.onclick = () => {
+                    document.querySelectorAll('.color-dot').forEach(e => e.classList.remove('active'));
+                    d.classList.add('active');
+                    state.selectedColor = c;
+                    state.player.color = c;
+                };
+                uiElements.colors.appendChild(d);
+            });
+        }
+
+        function titleEgg() {
+            state.clicks++;
+            uiElements.title.style.transform = `scale(${1 + state.clicks * 0.05})`;
+            setTimeout(() => uiElements.title.style.transform = 'scale(1)', 100);
+            
+            if (state.clicks === 5) {
+                uiElements.title.innerText = "再点 5 下试试？";
+                uiElements.title.style.color = "#fdcb6e";
+            }
+            if (state.clicks >= 10) {
+                state.godMode = true;
+                uiElements.title.innerText = "👑 开发者模式开启";
+                uiElements.title.style.color = "#FFD700";
+                uiElements.title.style.textShadow = "0 0 20px #FFD700";
+                showToast("已开启：开局巨大化！");
+                playSound(2.0);
+            }
+        }
+
+        function showToast(msg) {
+            uiElements.toast.innerText = msg;
+            uiElements.toast.style.opacity = 1;
+            setTimeout(() => uiElements.toast.style.opacity = 0, 3000);
+        }
+
+        function playSound(pitch = 1.0) {
+            if (!state.audioOn || audioCtx.state === 'suspended') {
+                if (state.audioOn) audioCtx.resume().catch(() => {});
+                return;
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            const t = audioCtx.currentTime;
+            osc.frequency.setValueAtTime(600 * pitch, t);
+            osc.frequency.exponentialRampToValueAtTime(100, t + 0.15);
+            gain.gain.setValueAtTime(0.1, t);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+            osc.start(t);
+            osc.stop(t + 0.15);
+        }
+
+        class Particle {
+            constructor(x, y, color, speed) {
+                this.x = x; this.y = y; this.color = color;
+                const a = Math.random() * Math.PI * 2;
+                const v = Math.random() * speed;
+                this.vx = Math.cos(a) * v;
+                this.vy = Math.sin(a) * v;
+                this.a = 1;
+                this.life = Math.random() * 0.03 + 0.02;
+                this.size = Math.random() * 3 + 2;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.a -= this.life; this.size *= 0.95; }
+            draw(c) { c.globalAlpha = Math.max(0, this.a); c.fillStyle = this.color; c.beginPath(); c.arc(this.x, this.y, this.size, 0, Math.PI*2); c.fill(); c.globalAlpha = 1; }
+        }
+
+        class DyingEntity {
+            constructor(x, y, r, c, n) { this.x = x; this.y = y; this.r = r; this.c = c; this.n = n; }
+            update() { this.r *= 0.8; }
+            draw(c) { if (this.r < 1) return; c.beginPath(); c.arc(this.x, this.y, this.r, 0, Math.PI*2); c.fillStyle = this.c; c.fill(); c.strokeStyle = 'white'; c.lineWidth = 2; c.stroke(); }
+        }
+
+        const rndCol = () => `hsl(${Math.floor(Math.random()*360)}, 85%, 60%)`;
+        const dist = (x1, y1, x2, y2) => Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+        const lerp = (s, e, a) => (1 - a) * s + a * e;
+
+        function spawnPart(x, y, col, num, spd) {
+            if (!state.highQuality) return;
+            for (let i = 0; i < num; i++) state.particles.push(new Particle(x, y, col, spd));
+        }
+
+        function initGame() {
+            state.foods = [];
+            state.bots = [];
+            state.particles = [];
+            state.dying = [];
+            
+            for (let i = 0; i < CONSTANTS.FOOD_NUM; i++) {
+                state.foods.push({ x: Math.random() * CONSTANTS.WORLD_W, y: Math.random() * CONSTANTS.WORLD_H, r: Math.random() * 4 + 2, c: rndCol() });
+            }
+            for (let i = 0; i < CONSTANTS.BOT_NUM; i++) createBot(i);
+
+            state.player.x = CONSTANTS.WORLD_W / 2;
+            state.player.y = CONSTANTS.WORLD_H / 2;
+
+            const n = state.player.name.toLowerCase();
+            state.modes.rainbow = n === 'rainbow';
+            state.modes.ghost = n === 'ghost';
+            state.modes.flash = n === 'flash';
+            state.modes.watermark = state.player.name === 'CN江南';
+
+            state.player.r = state.godMode ? 100 : 30;
+            state.player.renderR = state.player.r;
+            state.camera.x = state.player.x;
+            state.camera.y = state.player.y;
+        }
+
+        function createBot(i) {
+            let r = Math.random() < 0.15 ? Math.random() * 300 + 100 : Math.random() * 40 + 10;
+            let n = (r > 100 ? "TITAN " : "Bot ") + (i + 1);
+            let x, y, safe = false, tries = 0;
+            while (!safe && tries < 50) {
+                x = Math.random() * CONSTANTS.WORLD_W;
+                y = Math.random() * CONSTANTS.WORLD_H;
+                if (r > state.player.r && dist(x, y, state.player.x, state.player.y) < 1500) safe = false;
+                else safe = true;
+                tries++;
+            }
+            state.bots.push({ x, y, r, renderR: r, c: rndCol(), vx: Math.random()-0.5, vy: Math.random()-0.5, n });
+        }
+
+        function startGame() {
+            state.player.name = uiElements.nameInput.value || "Player 1";
+            state.player.color = state.selectedColor;
+            state.audioOn = uiElements.soundToggle.checked;
+            state.highQuality = uiElements.particleToggle.checked;
+            
+            if (state.audioOn && audioCtx.state === 'suspended') audioCtx.resume();
+            
+            uiElements.menu.classList.add('hidden');
+            uiElements.pauseBtn.style.display = 'flex';
+            initGame();
+            state.gameStatus = 'PLAYING';
+        }
+
+        function reset() {
+            state.godMode = false;
+            state.clicks = 0;
+            uiElements.title.innerText = "🌌 宇宙霸主";
+            uiElements.title.style.color = "#fff";
+            initGame();
+            state.gameStatus = 'PLAYING';
+        }
+
+        function togglePause() {
+            if (state.gameStatus === 'PLAYING') {
+                state.gameStatus = 'PAUSED';
+                uiElements.pauseBtn.innerHTML = '▶';
+                uiElements.pauseOverlay.style.display = 'flex';
+            } else if (state.gameStatus === 'PAUSED') {
+                state.gameStatus = 'PLAYING';
+                uiElements.pauseBtn.innerHTML = '⏸';
+                uiElements.pauseOverlay.style.display = 'none';
+            }
+        }
+
+        function drawWatermark() {
+            if (!state.modes.watermark) return;
+            ctx.save();
+            ctx.rotate(-Math.PI / 6);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+            ctx.font = 'bold 40px Arial';
+            ctx.textAlign = 'center';
+            for (let y = -1000; y < canvas.height + 1000; y += 150) {
+                for (let x = -1000; x < canvas.width + 1000; x += 300) {
+                    let off = (y / 150) % 2 === 0 ? 0 : 150;
+                    ctx.fillText('CN江南', x + off, y);
+                }
+            }
+            ctx.restore();
+        }
+
+        function drawBtn(txt, col, type, yOff) {
+            const dim = Math.min(canvas.width, canvas.height);
+            let w = Math.min(dim * 0.6, 300);
+            let h = Math.min(dim * 0.15, 60);
+            let x = (canvas.width - w) / 2;
+            let y = (canvas.height / 2) + yOff;
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = `bold ${h * 0.45}px Arial`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(txt, x + w / 2, y + h / 2);
+            state.activeBtns.push({ x, y, w, h, type });
+        }
+
+        function drawOverlay(st) {
+            state.activeBtns = [];
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const cx = canvas.width / 2, cy = canvas.height / 2;
+            const dim = Math.min(canvas.width, canvas.height);
+
+            if (st === 'GAMEOVER') {
+                ctx.fillStyle = '#ff4444'; ctx.textAlign = 'center'; ctx.font = `bold ${dim * 0.08}px Arial`;
+                ctx.fillText(state.deathMsg || "你 死 了", cx, cy - 100);
+                ctx.fillStyle = '#fff'; ctx.font = '20px Arial';
+                ctx.fillText(`最终直径: ${Math.floor(state.player.r * 2)}`, cx, cy - 50);
+                drawBtn("重新开始", "#d63031", "restart", 20);
+                drawBtn("复活 (保留80%)", "#00b894", "revive", 100);
+            } else if (st === 'WON') {
+                ctx.save(); ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 40;
+                ctx.fillStyle = '#FFD700'; ctx.font = `bold ${dim * 0.1}px "Microsoft YaHei"`; ctx.textAlign = 'center';
+                ctx.fillText("霸 主 诞 生", cx, cy - 100); ctx.restore();
+                ctx.fillStyle = '#fff'; ctx.font = '24px Arial';
+                ctx.fillText("达成成就: 直径 5000", cx, cy - 20);
+                ctx.fillStyle = '#888'; ctx.font = '16px Arial';
+                ctx.fillText("Developer: CN江南", cx, cy + 30);
+                drawBtn("再来一局", "#0984e3", "restart", 100);
+            }
+        }
+
+        function drawEntity(ctx, x, y, r, c, ghost) {
+            let b = r + Math.sin(state.time * 0.05 + x * 0.01) * (r * 0.03);
+            ctx.save();
+            if (ghost) ctx.globalAlpha = 0.4;
+            ctx.beginPath(); ctx.arc(x, y, b, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+            let g = ctx.createRadialGradient(x - r * 0.2, y - r * 0.2, r * 0.1, x, y, r);
+            g.addColorStop(0, "rgba(255,255,255,0.2)"); g.addColorStop(1, "rgba(0,0,0,0.05)");
+            ctx.fillStyle = g; ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.stroke();
+            ctx.restore();
+        }
+
+        function update() {
+            state.time++;
+            if (state.gameStatus === 'PAUSED') return;
+
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                state.particles[i].update();
+                if (state.particles[i].a <= 0) state.particles.splice(i, 1);
+            }
+            for (let i = state.dying.length - 1; i >= 0; i--) {
+                state.dying[i].update();
+                if (state.dying[i].r < 2) state.dying.splice(i, 1);
+            }
+
+            if (state.gameStatus === 'INTRO') {
+                state.bots.forEach(b => {
+                    b.renderR = lerp(b.renderR || b.r, b.r, 0.1);
+                    if (Math.random() < 0.02) { b.vx = Math.random() - 0.5; b.vy = Math.random() - 0.5; }
+                    let m = Math.sqrt(b.vx**2 + b.vy**2) || 1;
+                    let s = 3 + (150 / b.r);
+                    b.x += (b.vx / m) * s; b.y += (b.vy / m) * s;
+                    if (b.x < 0 || b.x > CONSTANTS.WORLD_W) b.vx *= -1;
+                    if (b.y < 0 || b.y > CONSTANTS.WORLD_H) b.vy *= -1;
+                });
+                state.camera.x = CONSTANTS.WORLD_W / 2 + Math.sin(state.time * 0.005) * 800;
+                state.camera.y = CONSTANTS.WORLD_H / 2 + Math.cos(state.time * 0.005) * 800;
+                if (uiElements.nameInput.value.toLowerCase() === 'rainbow') state.player.color = `hsl(${state.time % 360}, 100%, 60%)`;
+                return;
+            }
+
+            if (state.gameStatus !== 'PLAYING') return;
+
+            if (state.modes.rainbow) state.player.color = `hsl(${state.time % 360}, 100%, 60%)`;
+            if (state.modes.flash && state.time % 3 === 0) spawnPart(state.player.x, state.player.y, state.player.color, 1, 0);
+
+            const smallScreen = canvas.width < 800 || canvas.height < 600;
+            const visualR = smallScreen ? 25 : 45;
+            
+            state.camera.x = lerp(state.camera.x, state.player.x, 0.1);
+            state.camera.y = lerp(state.camera.y, state.player.y, 0.1);
+            state.player.renderR = lerp(state.player.renderR, state.player.r, 0.1);
+
+            let dx = state.input.x - canvas.width / 2;
+            let dy = state.input.y - canvas.height / 2;
+            let d = Math.sqrt(dx * dx + dy * dy);
+            let spd = Math.min(8 * (state.player.r / visualR), 30);
+            if (d > 10) {
+                state.player.x += (dx / d) * spd;
+                state.player.y += (dy / d) * spd;
+            }
+
+            state.player.x = Math.max(state.player.r, Math.min(CONSTANTS.WORLD_W - state.player.r, state.player.x));
+            state.player.y = Math.max(state.player.r, Math.min(CONSTANTS.WORLD_H - state.player.r, state.player.y));
+
+            state.bots.forEach(b => {
+                b.renderR = lerp(b.renderR || b.r, b.r, 0.1);
+                if (Math.random() < 0.02) { b.vx = Math.random() - 0.5; b.vy = Math.random() - 0.5; }
+                let m = Math.sqrt(b.vx**2 + b.vy**2) || 1;
+                let s = 3 + (150 / b.r);
+                b.x += (b.vx / m) * s; b.y += (b.vy / m) * s;
+                
+                if (b.x - b.r < 0 || b.x + b.r > CONSTANTS.WORLD_W) { b.vx *= -1; b.x = Math.max(b.r, Math.min(CONSTANTS.WORLD_W - b.r, b.x)); }
+                if (b.y - b.r < 0 || b.y + b.r > CONSTANTS.WORLD_H) { b.vy *= -1; b.y = Math.max(b.r, Math.min(CONSTANTS.WORLD_H - b.r, b.y)); }
+
+                for (let i = state.foods.length - 1; i >= 0; i--) {
+                    if (dist(b.x, b.y, state.foods[i].x, state.foods[i].y) < b.r + state.foods[i].r) {
+                        b.r += state.foods[i].r * 0.05;
+                        state.foods.splice(i, 1);
+                        state.foods.push({ x: Math.random() * CONSTANTS.WORLD_W, y: Math.random() * CONSTANTS.WORLD_H, r: Math.random() * 4 + 2, c: rndCol() });
+                    }
+                }
+
+                let dP = dist(state.player.x, state.player.y, b.x, b.y);
+                if (dP < state.player.r + b.r) {
+                    if (state.player.r > b.r * 1.05) {
+                        playSound(0.8);
+                        spawnPart(b.x, b.y, b.c, Math.min(b.r, 50), 12);
+                        state.dying.push(new DyingEntity(b.x, b.y, b.renderR, b.c, b.n));
+                        state.player.r += b.r * 0.2;
+                        state.bots = state.bots.filter(x => x !== b);
+                        createBot(state.bots.length);
+                    } else if (b.r > state.player.r * 1.05) {
+                        state.deathMsg = `被 ${b.n} 吞噬`;
+                        playSound(0.5);
+                        spawnPart(state.player.x, state.player.y, state.player.color, 30, 10);
+                        state.gameStatus = 'GAMEOVER';
+                        uiElements.pauseBtn.style.display = 'none';
+                    }
+                }
+            });
+
+            for (let i = state.foods.length - 1; i >= 0; i--) {
+                if (dist(state.player.x, state.player.y, state.foods[i].x, state.foods[i].y) < state.player.r + state.foods[i].r) {
+                    if (Math.random() < 0.3) playSound(1.5 + Math.random() * 0.5);
+                    spawnPart(state.foods[i].x, state.foods[i].y, state.foods[i].c, 3, 3);
+                    state.player.r += state.foods[i].r * 0.05;
+                    state.foods.splice(i, 1);
+                    state.foods.push({ x: Math.random() * CONSTANTS.WORLD_W, y: Math.random() * CONSTANTS.WORLD_H, r: Math.random() * 4 + 2, c: rndCol() });
+                }
+            }
+
+            if (state.player.r * 2 >= CONSTANTS.WIN_SIZE) {
+                state.gameStatus = 'WON';
+                uiElements.pauseBtn.style.display = 'none';
+            }
+        }
+
+        function loop() {
+            requestAnimationFrame(loop);
+            update();
+
+            ctx.fillStyle = '#0b0b0b';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            const smallScreen = canvas.width < 800 || canvas.height < 600;
+            const vR = smallScreen ? 25 : 45;
+            let zoom = Math.max(0.005, Math.min(2, vR / state.player.renderR));
+            if (state.gameStatus === 'INTRO') zoom = 0.3;
+
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(zoom, zoom);
+            ctx.translate(-state.camera.x, -state.camera.y);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+            ctx.lineWidth = Math.max(1, 2 / zoom);
+            ctx.beginPath();
+            for (let x = 0; x <= CONSTANTS.WORLD_W; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, CONSTANTS.WORLD_H); }
+            for (let y = 0; y <= CONSTANTS.WORLD_H; y += 200) { ctx.moveTo(0, y); ctx.lineTo(CONSTANTS.WORLD_W, y); }
+            ctx.stroke();
+
+            ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 20 / zoom;
+            ctx.strokeRect(0, 0, CONSTANTS.WORLD_W, CONSTANTS.WORLD_H);
+
+            state.foods.forEach(f => { ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fillStyle = f.c; ctx.fill(); });
+            state.particles.forEach(p => p.draw(ctx));
+            state.dying.forEach(e => e.draw(ctx));
+
+            [...state.bots, state.player].sort((a, b) => (a.renderR || a.r) - (b.renderR || b.r)).forEach(e => {
+                if (state.gameStatus === 'INTRO' && e === state.player) return;
+                if (e === state.player) { ctx.shadowBlur = 40; ctx.shadowColor = e.color; } else ctx.shadowBlur = 0;
+                let ghost = e === state.player && state.modes.ghost;
+                drawEntity(ctx, e.x, e.y, e.renderR || e.r, e.c || e.color, ghost);
+                ctx.fillStyle = 'white'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.font = `bold ${Math.max(10, (e.renderR || e.r) * 0.4)}px Arial`;
+                ctx.fillText(e.n || e.name, e.x, e.y);
+            });
+            ctx.shadowBlur = 0; ctx.restore();
+
+            drawWatermark();
+
+            if (state.gameStatus === 'GAMEOVER' || state.gameStatus === 'WON') {
+                drawOverlay(state.gameStatus);
+            } else if (state.gameStatus === 'PLAYING' || state.gameStatus === 'PAUSED') {
+                ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+                ctx.fillText(`名字: ${state.player.name}`, 20, 30);
+                ctx.fillText(`直径: ${Math.floor(state.player.r * 2)} / ${CONSTANTS.WIN_SIZE}`, 20, 55);
+                if (state.godMode) { ctx.fillStyle = '#FFD700'; ctx.fillText(`★ 开发者模式 ★`, 20, 80); }
+                let p = Math.min(1, state.player.r * 2 / CONSTANTS.WIN_SIZE);
+                ctx.fillStyle = '#333'; ctx.fillRect(20, 90, 150, 8);
+                ctx.fillStyle = '#00a8ff'; ctx.fillRect(20, 90, 150 * p, 8);
+            }
+        }
+
+        function handleInput(x, y, click) {
+            state.input.x = x; state.input.y = y;
+            if (click && (state.gameStatus === 'GAMEOVER' || state.gameStatus === 'WON')) {
+                state.activeBtns.forEach(b => {
+                    if (x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) {
+                        if (b.type === 'restart') { reset(); uiElements.pauseBtn.style.display = 'flex'; }
+                        if (b.type === 'revive') {
+                            state.player.r = Math.max(30, state.player.r * 0.8);
+                            state.player.renderR = state.player.r;
+                            let safe = false, ax, ay, c = 0;
+                            while (!safe && c < 100) {
+                                ax = Math.random() * (CONSTANTS.WORLD_W - 200) + 100;
+                                ay = Math.random() * (CONSTANTS.WORLD_H - 200) + 100;
+                                safe = true;
+                                for (let bot of state.bots) if (dist(ax, ay, bot.x, bot.y) < 1000 && bot.r > state.player.r) { safe = false; break; }
+                                c++;
+                            }
+                            state.player.x = safe ? ax : CONSTANTS.WORLD_W / 2;
+                            state.player.y = safe ? ay : CONSTANTS.WORLD_H / 2;
+                            state.camera.x = state.player.x; state.camera.y = state.player.y;
+                            state.gameStatus = 'PLAYING';
+                        }
+                    }
+                });
+            }
+        }
+
+        window.addEventListener('mousemove', e => handleInput(e.clientX, e.clientY, false));
+        window.addEventListener('mousedown', e => handleInput(e.clientX, e.clientY, true));
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleInput(e.touches[0].clientX, e.touches[0].clientY, false) }, { passive: false });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(e.touches[0].clientX, e.touches[0].clientY, true) }, { passive: false });
+        window.addEventListener('keydown', e => { if (e.code === 'Escape') togglePause(); });
+
+        initColors();
+        initGame();
+        loop();
+    </script>
+</body>
+</html>
