@@ -1,4 +1,4 @@
-# 🌌 宇宙霸主：球球大作战 (CN江南重制版)
+# 🌌 宇宙霸主：球球大作战
 
 > **Developer**: CN江南  
 > **Version**: 1.1.0 (Signature Edition)
